@@ -17,3 +17,7 @@ pr-run-mode = "upload"
 include = ["manifest.yml"]
 # The archive format to use for non-windows builds (defaults .tar.xz)
 unix-archive = ".tar.gz"
+
+[dist.dependencies.apt]
+libdbus-1-dev = "*"
+pkg-config = "*"

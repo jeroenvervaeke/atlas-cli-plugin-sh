@@ -1,17 +1,30 @@
 [package]
-name = "atlas-cli-rust-plugin"
+name = "atlas-cli-plugin-sh"
 version = "1.0.0"
 edition = "2021"
-repository = "https://github.com/jeroenvervaeke/atlas-cli-rust-plugin"
+repository = "https://github.com/jeroenvervaeke/atlas-cli-plugin-sh"
 
 [dependencies]
-anyhow = "1.0.102"
+anyhow = "1.0"
+# Required by mongodb-atlas-cli's #[operation] macro generated code
+bytes = "1"
+http = "1"
+# Required by mongodb-atlas-cli's #[operation] macro generated code
+typed-builder = "0.23"
 clap = { version = "4.6.1", features = ["derive"] }
-dialoguer = "0.12.0"
+mongodb-atlas-cli = { version = "0.2.1", features = ["derive"] }
+keyring = { version = "3", default-features = false, features = ["linux-native", "apple-native", "windows-native"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+rand = "0.8"
+which = "7"
+redacted = { version = "0.2", features = ["serde_support"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
 lto = "thin"
-
-[dist]
