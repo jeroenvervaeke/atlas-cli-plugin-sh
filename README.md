@@ -1,5 +1,7 @@
 # atlas-cli-plugin-sh
 
+> **Preview / Release Candidate** — This plugin is not yet production-ready. Expect breaking changes. Feedback welcome.
+
 Atlas CLI plugin that launches [mongosh](https://www.mongodb.com/docs/mongodb-shell/) connected to an Atlas cluster — no manual connection string needed.
 
 ## Install
