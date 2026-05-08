@@ -27,7 +27,7 @@ Examples:
   # Forward flags to mongosh
   atlas sh --cluster MyCluster --quiet --norc";
 
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 #[command(
     version,
     about = "[preview] Launch mongosh against an Atlas cluster",
@@ -35,20 +35,20 @@ Examples:
                   PREVIEW: not production-ready. Expect breaking changes between versions.\n\n\
                   Run 'atlas sh --help' for options and examples."
 )]
-pub struct Cli {
+pub(crate) struct Cli {
     #[command(subcommand)]
-    pub command: PluginSubCommands,
+    pub(crate) command: PluginSubCommands,
 }
 
-#[derive(Subcommand)]
-pub enum PluginSubCommands {
+#[derive(Debug, Subcommand)]
+pub(crate) enum PluginSubCommands {
     /// [preview] Launch mongosh against an Atlas cluster
     #[command(long_about = SH_LONG_ABOUT, after_long_help = SH_AFTER_LONG_HELP)]
     Sh(ShArgs),
 }
 
-#[derive(Args)]
-pub struct ShArgs {
+#[derive(Debug, Args)]
+pub(crate) struct ShArgs {
     /// Atlas cluster name (required)
     #[arg(
         long,
@@ -60,7 +60,7 @@ pub struct ShArgs {
                      or the active Atlas CLI profile.\n\n\
                      Alias: --clusterName (matches mongodb-atlas-cli)."
     )]
-    pub cluster: String,
+    pub(crate) cluster: String,
 
     /// Atlas CLI profile to use
     #[arg(
@@ -73,7 +73,7 @@ pub struct ShArgs {
                      and the optional mongosh_path setting. Manage profiles with\n\
                      'atlas config' and 'atlas auth login'."
     )]
-    pub profile: String,
+    pub(crate) profile: String,
 
     /// Atlas project ID (overrides profile default)
     #[arg(
@@ -85,7 +85,7 @@ pub struct ShArgs {
                      profile. Persist a default with 'atlas config set project_id <id>'.\n\n\
                      Alias: --projectId (matches mongodb-atlas-cli)."
     )]
-    pub project_id: Option<String>,
+    pub(crate) project_id: Option<String>,
 
     /// Arguments forwarded to mongosh (e.g. --eval, --quiet, --norc)
     #[arg(
@@ -101,7 +101,7 @@ pub struct ShArgs {
                        --json                  print results as JSON\n\n\
                      Run 'mongosh --help' for the full list."
     )]
-    pub mongosh_args: Vec<String>,
+    pub(crate) mongosh_args: Vec<String>,
 }
 
 #[cfg(test)]
@@ -128,11 +128,16 @@ mod tests {
     #[test]
     fn parses_all_flags() {
         let cli = Cli::try_parse_from([
-            "atlas", "sh",
-            "--cluster", "prod",
-            "--profile", "staging",
-            "--project-id", "abc123",
-            "--eval", "db.stats()",
+            "atlas",
+            "sh",
+            "--cluster",
+            "prod",
+            "--profile",
+            "staging",
+            "--project-id",
+            "abc123",
+            "--eval",
+            "db.stats()",
         ])
         .unwrap();
         let PluginSubCommands::Sh(args) = cli.command;
@@ -145,10 +150,14 @@ mod tests {
     #[test]
     fn accepts_mongodb_atlas_cli_aliases() {
         let cli = Cli::try_parse_from([
-            "atlas", "sh",
-            "--clusterName", "prod",
-            "-P", "staging",
-            "--projectId", "abc123",
+            "atlas",
+            "sh",
+            "--clusterName",
+            "prod",
+            "-P",
+            "staging",
+            "--projectId",
+            "abc123",
         ])
         .unwrap();
         let PluginSubCommands::Sh(args) = cli.command;
@@ -166,10 +175,8 @@ mod tests {
 
     #[test]
     fn project_id_alias_matches_project_id() {
-        let cli = Cli::try_parse_from([
-            "atlas", "sh", "--cluster", "c", "--projectId", "abc123",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["atlas", "sh", "--cluster", "c", "--projectId", "abc123"])
+            .unwrap();
         let PluginSubCommands::Sh(args) = cli.command;
         assert_eq!(args.project_id.as_deref(), Some("abc123"));
     }

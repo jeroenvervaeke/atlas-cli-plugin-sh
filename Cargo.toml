@@ -6,24 +6,40 @@ repository = "https://github.com/jeroenvervaeke/atlas-cli-plugin-sh"
 
 [dependencies]
 anyhow = "1.0"
-# Required by mongodb-atlas-cli's #[operation] macro generated code
+# bytes and typed-builder are leaked by mongodb-atlas-cli's #[operation] macro.
+# TODO: file an upstream issue asking the macro to use $crate-qualified paths so
+# downstream crates don't need direct dependencies.
 bytes = "1"
-http = "1"
-# Required by mongodb-atlas-cli's #[operation] macro generated code
 typed-builder = "0.23"
+http = "1"
+chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.6.1", features = ["derive"] }
-mongodb-atlas-cli = { version = "0.2.1", features = ["derive"] }
 keyring = { version = "3", default-features = false, features = ["linux-native", "apple-native", "windows-native"] }
-tokio = { version = "1", features = ["full"] }
+mongodb-atlas-cli = { version = "0.2.1", features = ["derive"] }
+rand = "0.8"
+redacted = { version = "0.2", features = ["serde_support"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "1", features = ["v4"] }
-rand = "0.8"
-which = "7"
-redacted = { version = "0.2", features = ["serde_support"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4"] }
+which = "7"
+
+[lints.rust]
+unsafe_code = "forbid"
+unreachable_pub = "warn"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+# Conflicts with `unreachable_pub` in binary crates: `pub(crate)` is correct here.
+redundant_pub_crate = "allow"
+# Binary returns `anyhow::Result`; not a public library API.
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
 
 [profile.dist]
 inherits = "release"

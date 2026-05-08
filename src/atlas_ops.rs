@@ -10,16 +10,19 @@ use serde::{Deserialize, Serialize};
 #[response(ClusterDetail)]
 struct GetClusterRequest {}
 
+// Must be `pub` (not `pub(crate)`): the `#[operation]` macro generates a public
+// alias referencing this type, so restricting visibility triggers E0446.
+#[allow(unreachable_pub)]
 #[derive(Debug, Deserialize)]
 pub struct ClusterDetail {
     #[serde(rename = "connectionStrings")]
-    pub connection_strings: ConnectionStrings,
+    pub(crate) connection_strings: ConnectionStrings,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ConnectionStrings {
+pub(crate) struct ConnectionStrings {
     #[serde(rename = "standardSrv")]
-    pub standard_srv: String,
+    pub(crate) standard_srv: String,
 }
 
 // --- CreateDatabaseUser ---
@@ -40,20 +43,22 @@ struct CreateDatabaseUserRequest {
 }
 
 #[derive(Debug, Serialize)]
-pub struct DatabaseUserRole {
+pub(crate) struct DatabaseUserRole {
     #[serde(rename = "roleName")]
-    pub role_name: String,
+    pub(crate) role_name: String,
     #[serde(rename = "databaseName")]
-    pub database_name: String,
+    pub(crate) database_name: String,
 }
 
+// See note on `ClusterDetail`: must be `pub` for the `#[operation]` macro.
+#[allow(unreachable_pub)]
 #[derive(Debug, Deserialize)]
 pub struct DatabaseUserResponse {}
 
 // --- Public helpers ---
 
 /// Fetch the SRV connection string for a cluster.
-pub async fn get_cluster_srv(
+pub(crate) async fn get_cluster_srv(
     client: &mongodb_atlas_cli::atlas::client::AtlasClient,
     group_id: &str,
     cluster_name: &str,
@@ -88,7 +93,7 @@ pub async fn get_cluster_srv(
 }
 
 /// Create a temporary database user with readWriteAnyDatabase and 8h TTL.
-pub async fn create_temp_db_user(
+pub(crate) async fn create_temp_db_user(
     client: &mongodb_atlas_cli::atlas::client::AtlasClient,
     group_id: &str,
     username: &str,

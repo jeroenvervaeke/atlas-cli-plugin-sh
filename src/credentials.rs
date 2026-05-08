@@ -1,44 +1,46 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use keyring::Entry;
-use redacted::{Redacted, RedactContents};
+use redacted::{RedactContents, Redacted};
 use serde::{Deserialize, Serialize};
 
 const KEYRING_SERVICE: &str = "atlas-sh";
-pub const TTL_HOURS: i64 = 8;
+pub(crate) const TTL_HOURS: i64 = 8;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct CachedCredentials {
-    pub username: String,
+pub(crate) struct CachedCredentials {
+    pub(crate) username: String,
     #[serde(with = "redacted_serde")]
-    pub password: Redacted<String, RedactContents>,
+    pub(crate) password: Redacted<String, RedactContents>,
     #[serde(with = "redacted_serde")]
-    pub connection_string: Redacted<String, RedactContents>,
-    pub expires_at: DateTime<Utc>,
+    pub(crate) connection_string: Redacted<String, RedactContents>,
+    pub(crate) expires_at: DateTime<Utc>,
 }
 
 // redacted 0.2.0 imports `serde_bytes::Serialize` instead of `serde::Serialize`
 // in its blanket impl, so `Redacted<String, _>` does not satisfy `serde::Serialize`.
 // This module bridges the gap so the parent struct can use `#[derive(Serialize, Deserialize)]`.
 mod redacted_serde {
-    use super::{Redacted, RedactContents};
+    use super::{RedactContents, Redacted};
 
-    pub fn serialize<S: serde::Serializer>(
+    pub(super) fn serialize<S: serde::Serializer>(
         r: &Redacted<String, RedactContents>,
         s: S,
     ) -> Result<S::Ok, S::Error> {
         serde::Serialize::serialize(&**r, s)
     }
 
-    pub fn deserialize<'de, D: serde::Deserializer<'de>>(
+    pub(super) fn deserialize<'de, D: serde::Deserializer<'de>>(
         d: D,
     ) -> Result<Redacted<String, RedactContents>, D::Error> {
-        Ok(Redacted::new(<String as serde::Deserialize>::deserialize(d)?))
+        Ok(Redacted::new(<String as serde::Deserialize>::deserialize(
+            d,
+        )?))
     }
 }
 
 impl CachedCredentials {
-    pub fn new(username: String, password: String, connection_string: String) -> Self {
+    pub(crate) fn new(username: String, password: String, connection_string: String) -> Self {
         Self {
             username,
             password: Redacted::new(password),
@@ -47,7 +49,7 @@ impl CachedCredentials {
         }
     }
 
-    pub fn is_expired(&self) -> bool {
+    pub(crate) fn is_expired(&self) -> bool {
         Utc::now() >= self.expires_at
     }
 }
@@ -55,9 +57,8 @@ impl CachedCredentials {
 /// Load cached credentials from the OS keychain.
 /// Returns Ok(None) if no entry exists.
 /// Returns Err if the keyring is unavailable (caller should degrade gracefully).
-pub fn load(account: &str) -> Result<Option<CachedCredentials>> {
-    let entry = Entry::new(KEYRING_SERVICE, account)
-        .context("failed to open keyring entry")?;
+pub(crate) fn load(account: &str) -> Result<Option<CachedCredentials>> {
+    let entry = Entry::new(KEYRING_SERVICE, account).context("failed to open keyring entry")?;
 
     match entry.get_password() {
         Ok(json) => {
@@ -71,21 +72,23 @@ pub fn load(account: &str) -> Result<Option<CachedCredentials>> {
 }
 
 /// Store credentials in the OS keychain.
-pub fn store(account: &str, creds: &CachedCredentials) -> Result<()> {
-    let entry = Entry::new(KEYRING_SERVICE, account)
-        .context("failed to open keyring entry")?;
+pub(crate) fn store(account: &str, creds: &CachedCredentials) -> Result<()> {
+    let entry = Entry::new(KEYRING_SERVICE, account).context("failed to open keyring entry")?;
     let json = serde_json::to_string(creds).context("failed to serialize credentials")?;
-    entry.set_password(&json).context("failed to write to keyring")?;
+    entry
+        .set_password(&json)
+        .context("failed to write to keyring")?;
     Ok(())
 }
 
 /// Delete cached credentials from the OS keychain (best-effort).
 /// Available for future cleanup tooling (e.g. `atlas sh logout`).
 #[allow(dead_code)]
-pub fn invalidate(account: &str) -> Result<()> {
-    let entry = Entry::new(KEYRING_SERVICE, account)
-        .context("failed to open keyring entry")?;
-    entry.delete_credential().context("failed to delete keyring entry")?;
+pub(crate) fn invalidate(account: &str) -> Result<()> {
+    let entry = Entry::new(KEYRING_SERVICE, account).context("failed to open keyring entry")?;
+    entry
+        .delete_credential()
+        .context("failed to delete keyring entry")?;
     Ok(())
 }
 
@@ -124,28 +127,23 @@ mod tests {
             "mongodb+srv://x".to_string(),
         );
         let debug = format!("{creds:?}");
-        assert!(!debug.contains("topsecret"), "password must not appear in Debug");
+        assert!(
+            !debug.contains("topsecret"),
+            "password must not appear in Debug"
+        );
         assert!(debug.contains("REDACTED"));
     }
 
     #[test]
     fn is_expired_false_when_fresh() {
-        let creds = CachedCredentials::new(
-            "u".to_string(),
-            "p".to_string(),
-            "c".to_string(),
-        );
+        let creds = CachedCredentials::new("u".to_string(), "p".to_string(), "c".to_string());
         assert!(!creds.is_expired());
     }
 
     #[test]
     fn is_expired_true_when_past() {
         use chrono::Duration;
-        let mut creds = CachedCredentials::new(
-            "u".to_string(),
-            "p".to_string(),
-            "c".to_string(),
-        );
+        let mut creds = CachedCredentials::new("u".to_string(), "p".to_string(), "c".to_string());
         creds.expires_at = chrono::Utc::now() - Duration::seconds(1);
         assert!(creds.is_expired());
     }

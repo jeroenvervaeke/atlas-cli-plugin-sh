@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use chrono::{Duration, Utc};
 use clap::Parser;
 use rand::Rng;
@@ -9,7 +9,7 @@ mod atlas_ops;
 mod credentials;
 
 use args::{Cli, PluginSubCommands};
-use redacted::{Redacted, RedactContents};
+use redacted::{RedactContents, Redacted};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -81,7 +81,9 @@ async fn main() -> Result<()> {
     )
 }
 
-fn resolve_mongosh(config: &mongodb_atlas_cli::config::AtlasCLIConfig) -> Result<std::path::PathBuf> {
+fn resolve_mongosh(
+    config: &mongodb_atlas_cli::config::AtlasCLIConfig,
+) -> Result<std::path::PathBuf> {
     if let Some(path) = &config.mongosh_path {
         let p = std::path::PathBuf::from(path);
         if p.exists() {
@@ -93,9 +95,7 @@ fn resolve_mongosh(config: &mongodb_atlas_cli::config::AtlasCLIConfig) -> Result
         );
     }
     which::which("mongosh").map_err(|_| {
-        anyhow!(
-            "mongosh not found. Install: https://www.mongodb.com/try/download/shell"
-        )
+        anyhow!("mongosh not found. Install: https://www.mongodb.com/try/download/shell")
     })
 }
 
