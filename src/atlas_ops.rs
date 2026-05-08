@@ -5,6 +5,8 @@ use mongodb_atlas_cli::atlas::layer::OperationError;
 use mongodb_atlas_cli::atlas::operation;
 use serde::{Deserialize, Serialize};
 
+use crate::domain::{ClusterName, Password, ProjectId, Username};
+
 /// Database the temporary user authenticates against.
 const AUTH_DATABASE: &str = "admin";
 
@@ -99,14 +101,14 @@ fn map_atlas_error(err: OperationError, ctx: AtlasErrorContext<'_>) -> anyhow::E
 /// Fetch the SRV connection string for a cluster.
 pub(crate) async fn get_cluster_srv(
     client: &AtlasClient,
-    group_id: &str,
-    cluster_name: &str,
+    project_id: &ProjectId,
+    cluster: &ClusterName,
 ) -> Result<String> {
     let op = GetClusterOperation::builder()
         .url_parameters(
             GetClusterOperationUrlParams::builder()
-                .group_id(group_id.to_string())
-                .cluster_name(cluster_name.to_string())
+                .group_id(project_id.as_str().to_owned())
+                .cluster_name(cluster.as_str().to_owned())
                 .build(),
         )
         .build();
@@ -117,7 +119,7 @@ pub(crate) async fn get_cluster_srv(
             AtlasErrorContext {
                 action: "fetch cluster",
                 not_found: Some(format!(
-                    "Cluster '{cluster_name}' not found in project '{group_id}'."
+                    "Cluster '{cluster}' not found in project '{project_id}'."
                 )),
             },
         )
@@ -131,9 +133,9 @@ pub(crate) async fn get_cluster_srv(
 /// `delete_after_date`.
 pub(crate) async fn create_temp_db_user(
     client: &AtlasClient,
-    group_id: &str,
-    username: &str,
-    password: &str,
+    project_id: &ProjectId,
+    username: &Username,
+    password: &Password,
     delete_after_date: &str,
 ) -> Result<()> {
     let roles = TEMP_USER_ROLES
@@ -147,13 +149,13 @@ pub(crate) async fn create_temp_db_user(
     let op = CreateDatabaseUserOperation::builder()
         .url_parameters(
             CreateDatabaseUserOperationUrlParams::builder()
-                .group_id(group_id.to_string())
+                .group_id(project_id.as_str().to_owned())
                 .build(),
         )
         .body(CreateDatabaseUserRequest {
             database_name: AUTH_DATABASE.to_string(),
-            username: username.to_string(),
-            password: password.to_string(),
+            username: username.as_str().to_owned(),
+            password: password.as_str().to_owned(),
             roles,
             delete_after_date: delete_after_date.to_string(),
         })
