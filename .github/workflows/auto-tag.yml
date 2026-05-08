@@ -16,15 +16,10 @@ jobs:
         with:
           fetch-depth: 2
 
-      - uses: dtolnay/rust-toolchain@stable
-
       - name: Compare versions and tag if changed
         run: |
-          CURR_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "atlas-cli-plugin-sh") | .version')
-
-          mkdir -p /tmp/prev-pkg
-          git show HEAD~1:Cargo.toml > /tmp/prev-pkg/Cargo.toml
-          PREV_VERSION=$(cargo metadata --no-deps --format-version 1 --manifest-path /tmp/prev-pkg/Cargo.toml | jq -r '.packages[] | select(.name == "atlas-cli-plugin-sh") | .version')
+          CURR_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('Cargo.toml','rb'))['package']['version'])")
+          PREV_VERSION=$(git show HEAD~1:Cargo.toml | python3 -c "import sys,tomllib; print(tomllib.load(sys.stdin.buffer)['package']['version'])")
 
           echo "Previous version: $PREV_VERSION"
           echo "Current version:  $CURR_VERSION"
