@@ -14,12 +14,7 @@ The temporary user is automatically removed by Atlas after it expires.
 
 Any flags this command does not recognize are forwarded verbatim to mongosh, so
 you can use familiar mongosh options like --eval, --quiet, --norc, --json, etc.
-without any special separator.
-
-Requirements:
-  - Atlas CLI 1.35.0+ with an authenticated profile ('atlas auth login')
-  - mongosh installed and on PATH (or configured via 'atlas config set mongosh_path')
-  - A project ID in the active Atlas CLI profile, or passed via --project-id";
+without any special separator.";
 
 const SH_AFTER_LONG_HELP: &str = "\
 Examples:
