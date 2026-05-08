@@ -3,6 +3,10 @@ use clap::{Args, Parser, Subcommand};
 const SH_LONG_ABOUT: &str = "\
 Launch mongosh connected to an Atlas cluster — no manual connection string needed.
 
+PREVIEW / RELEASE CANDIDATE: this plugin is not yet production-ready.
+Expect breaking changes between versions. Feedback welcome at
+https://github.com/jeroenvervaeke/atlas-cli-plugin-sh/issues.
+
 The plugin looks up the cluster's SRV address through the Atlas API, provisions a
 short-lived database user, caches the credentials in the OS keychain, and then
 execs mongosh with the appropriate connection string and authentication flags.
@@ -34,8 +38,10 @@ Examples:
 #[derive(Parser)]
 #[command(
     version,
-    about = "Atlas CLI plugin that launches mongosh against an Atlas cluster",
+    about = "Atlas CLI plugin that launches mongosh against an Atlas cluster [preview]",
     long_about = "Atlas CLI plugin that launches mongosh against an Atlas cluster.\n\n\
+                  PREVIEW / RELEASE CANDIDATE: this plugin is not yet production-ready.\n\
+                  Expect breaking changes between versions.\n\n\
                   Run 'atlas sh --help' for the full list of options and examples."
 )]
 pub struct Cli {
@@ -45,7 +51,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum PluginSubCommands {
-    /// Launch mongosh connected to an Atlas cluster
+    /// Launch mongosh connected to an Atlas cluster [preview]
     #[command(long_about = SH_LONG_ABOUT, after_long_help = SH_AFTER_LONG_HELP)]
     Sh(ShArgs),
 }
