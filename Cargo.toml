@@ -20,7 +20,7 @@ rand = "0.8"
 redacted = { version = "0.2", features = ["serde_support"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
@@ -40,6 +40,10 @@ redundant_pub_crate = "allow"
 module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
+# Intentional: this CLI runs on `tokio::main(flavor = "current_thread")` so
+# futures don't need to cross threads. Bounding traits with `Send` would
+# force `Mutex`/`Arc` in test fakes for no runtime benefit.
+future_not_send = "allow"
 
 [profile.dist]
 inherits = "release"

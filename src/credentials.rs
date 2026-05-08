@@ -31,19 +31,15 @@ impl CachedCredentials {
         }
     }
 
-    /// Whether the cached credentials should no longer be reused.
+    /// Whether the cached credentials should no longer be reused, given the
+    /// caller's notion of "now".
     ///
     /// Treats the moment of expiry itself as expired (`now >= expires_at`):
     /// we'd rather re-issue a user one second early than send a soon-to-be
-    /// invalid password to mongosh.
-    pub(crate) fn is_expired(&self) -> bool {
-        self.is_expired_at(Utc::now())
-    }
-
-    /// Clock-injected variant of [`Self::is_expired`]. Internal so callers
-    /// cannot pass a manipulated `now`; tests use it to exercise the `>=`
-    /// boundary.
-    fn is_expired_at(&self, now: DateTime<Utc>) -> bool {
+    /// invalid password to mongosh. The clock is passed in (rather than read
+    /// inside this function) so the orchestration layer can inject a fake in
+    /// tests via [`crate::deps::Clock`].
+    pub(crate) fn is_expired_at(&self, now: DateTime<Utc>) -> bool {
         now >= self.expires_at
     }
 }
@@ -146,20 +142,6 @@ mod tests {
             "connection string must not appear in Debug",
         );
         assert!(debug.contains("REDACTED"));
-    }
-
-    #[test]
-    fn is_expired_false_when_fresh() {
-        let mut creds = fresh_creds();
-        creds.expires_at = Utc::now() + chrono::Duration::hours(1);
-        assert!(!creds.is_expired());
-    }
-
-    #[test]
-    fn is_expired_true_when_past() {
-        let mut creds = fresh_creds();
-        creds.expires_at = Utc::now() - chrono::Duration::seconds(1);
-        assert!(creds.is_expired());
     }
 
     #[test]
