@@ -1,6 +1,13 @@
+use std::convert::Infallible;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
 use anyhow::{anyhow, Context, Result};
 use chrono::{Duration, Utc};
 use clap::Parser;
+use mongodb_atlas_cli::atlas::client::AtlasClient;
+use mongodb_atlas_cli::config::AtlasCLIConfig;
+use rand::distributions::Alphanumeric;
 use rand::Rng;
 use uuid::Uuid;
 
@@ -8,8 +15,8 @@ mod args;
 mod atlas_ops;
 mod credentials;
 
-use args::{Cli, PluginSubCommands};
-use redacted::{RedactContents, Redacted};
+use args::{Cli, ConnectionArgs, LogoutArgs, PluginSubCommands, ShArgs};
+use credentials::CachedCredentials;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -17,43 +24,36 @@ async fn main() -> Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let cli = Cli::parse();
-    let PluginSubCommands::Sh(args) = cli.command;
+    match Cli::parse().command {
+        PluginSubCommands::Sh(args) => run_sh(args).await,
+        PluginSubCommands::Logout(args) => run_logout(&args),
+    }
+}
 
-    // 1. Load Atlas config and build client
-    let client = mongodb_atlas_cli::atlas::client::AtlasClient::with_profile(&args.profile)
-        .context("Failed to create Atlas client. Run 'atlas auth login' and try again.")?;
+async fn run_sh(args: ShArgs) -> Result<()> {
+    let client = build_client(&args.connection.profile)?;
 
-    // 2. Fail fast: find mongosh before any API calls
+    // Fail fast: find mongosh before any API calls.
     let mongosh_path = resolve_mongosh(client.config())?;
     tracing::debug!(path = %mongosh_path.display(), "found mongosh");
 
-    // 3. Resolve project_id (flag overrides config)
-    let project_id = args
-        .project_id
-        .clone()
-        .or_else(|| client.config().project_id.clone())
-        .ok_or_else(|| {
-            anyhow!(
-                "No project ID configured. Use --project-id or run 'atlas config set project_id <id>'"
-            )
-        })?;
+    let project_id = resolve_project_id(&args.connection, client.config())?;
+    let cluster = &args.connection.cluster;
 
     tracing::debug!(
-        profile = %args.profile,
-        project_id = %project_id,
-        cluster = %args.cluster,
-        "resolved config"
+        profile = %args.connection.profile,
+        %project_id,
+        %cluster,
+        "resolved config",
     );
 
-    // 4. Check keyring cache
-    let keyring_account = format!("{}:{}", project_id, args.cluster);
+    let keyring_account = keyring_account(&project_id, cluster);
     let credentials = match credentials::load(&keyring_account) {
         Ok(Some(creds)) if !creds.is_expired() => {
             tracing::info!(
                 username = %creds.username,
                 expires_at = %creds.expires_at,
-                "using cached credentials"
+                "using cached credentials",
             );
             creds
         }
@@ -63,111 +63,146 @@ async fn main() -> Result<()> {
             } else {
                 tracing::info!("no cached credentials, creating new user");
             }
-            create_and_cache_user(&client, &project_id, &args.cluster, &keyring_account).await?
+            create_and_cache_user(&client, &project_id, cluster, &keyring_account).await?
         }
-        Err(e) => {
-            tracing::warn!(err = %e, "keyring unavailable, creating new user without caching");
-            create_user_uncached(&client, &project_id, &args.cluster).await?
+        Err(err) => {
+            tracing::warn!(%err, "keyring unavailable, creating new user without caching");
+            create_user_uncached(&client, &project_id, cluster).await?
         }
     };
 
-    // 5. Exec mongosh (replaces current process)
-    launch_mongosh(
-        &mongosh_path,
-        &credentials.connection_string,
-        &credentials.username,
-        &credentials.password,
-        &args.mongosh_args,
-    )
+    launch_mongosh(&mongosh_path, &credentials, &args.mongosh_args).map(|_: Infallible| ())
 }
 
-fn resolve_mongosh(
-    config: &mongodb_atlas_cli::config::AtlasCLIConfig,
-) -> Result<std::path::PathBuf> {
+fn run_logout(args: &LogoutArgs) -> Result<()> {
+    let client = build_client(&args.connection.profile)?;
+    let project_id = resolve_project_id(&args.connection, client.config())?;
+    let cluster = &args.connection.cluster;
+    let account = keyring_account(&project_id, cluster);
+
+    if credentials::invalidate(&account)? {
+        tracing::info!(%project_id, %cluster, "removed cached credentials");
+        println!("Removed cached credentials for cluster '{cluster}' in project '{project_id}'.");
+    } else {
+        println!("No cached credentials for cluster '{cluster}' in project '{project_id}'.");
+    }
+    Ok(())
+}
+
+fn build_client(profile: &str) -> Result<AtlasClient> {
+    AtlasClient::with_profile(profile)
+        .context("Failed to create Atlas client. Run 'atlas auth login' and try again.")
+}
+
+fn resolve_project_id(args: &ConnectionArgs, config: &AtlasCLIConfig) -> Result<String> {
+    args.project_id
+        .as_deref()
+        .or(config.project_id.as_deref())
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            anyhow!(
+                "No project ID configured. Use --project-id or run \
+                 'atlas config set project_id <id>'"
+            )
+        })
+}
+
+fn keyring_account(project_id: &str, cluster: &str) -> String {
+    format!("{project_id}:{cluster}")
+}
+
+fn resolve_mongosh(config: &AtlasCLIConfig) -> Result<PathBuf> {
     if let Some(path) = &config.mongosh_path {
-        let p = std::path::PathBuf::from(path);
+        let p = PathBuf::from(path);
         if p.exists() {
             return Ok(p);
         }
         tracing::warn!(
             path = %p.display(),
-            "mongosh_path from config does not exist, falling back to PATH"
+            "mongosh_path from config does not exist, falling back to PATH",
         );
     }
-    which::which("mongosh").map_err(|_| {
-        anyhow!("mongosh not found. Install: https://www.mongodb.com/try/download/shell")
-    })
+    which::which("mongosh")
+        .with_context(|| "mongosh not found. Install: https://www.mongodb.com/try/download/shell")
 }
 
 async fn create_and_cache_user(
-    client: &mongodb_atlas_cli::atlas::client::AtlasClient,
+    client: &AtlasClient,
     project_id: &str,
     cluster: &str,
     keyring_account: &str,
-) -> Result<credentials::CachedCredentials> {
+) -> Result<CachedCredentials> {
     let creds = create_user_uncached(client, project_id, cluster).await?;
-    if let Err(e) = credentials::store(keyring_account, &creds) {
-        tracing::warn!(err = %e, "failed to cache credentials in keyring");
+    if let Err(err) = credentials::store(keyring_account, &creds) {
+        tracing::warn!(%err, "failed to cache credentials in keyring");
     }
     Ok(creds)
 }
 
 async fn create_user_uncached(
-    client: &mongodb_atlas_cli::atlas::client::AtlasClient,
+    client: &AtlasClient,
     project_id: &str,
     cluster: &str,
-) -> Result<credentials::CachedCredentials> {
+) -> Result<CachedCredentials> {
     let srv = atlas_ops::get_cluster_srv(client, project_id, cluster).await?;
-    tracing::debug!(srv = %srv, "got cluster SRV address");
+    tracing::debug!(%srv, "got cluster SRV address");
 
     let username = format!("atlas-sh-{}", Uuid::new_v4());
     let password: String = rand::thread_rng()
-        .sample_iter(&rand::distributions::Alphanumeric)
+        .sample_iter(&Alphanumeric)
         .take(32)
         .map(char::from)
         .collect();
 
     let expires_at = Utc::now() + Duration::hours(credentials::TTL_HOURS);
-    let delete_after_date = expires_at.to_rfc3339();
+    atlas_ops::create_temp_db_user(
+        client,
+        project_id,
+        &username,
+        &password,
+        &expires_at.to_rfc3339(),
+    )
+    .await?;
 
-    atlas_ops::create_temp_db_user(client, project_id, &username, &password, &delete_after_date)
-        .await?;
+    tracing::info!(%username, %expires_at, "created temporary database user");
 
-    tracing::info!(username = %username, expires_at = %expires_at, "created temporary database user");
-
-    Ok(credentials::CachedCredentials::new(username, password, srv))
+    Ok(CachedCredentials::new(username, password, srv, expires_at))
 }
 
-fn launch_mongosh(
-    mongosh_path: &std::path::Path,
-    connection_string: &Redacted<String, RedactContents>,
-    username: &str,
-    password: &Redacted<String, RedactContents>,
+fn build_mongosh_command(
+    mongosh_path: &Path,
+    creds: &CachedCredentials,
     extra_args: &[String],
-) -> Result<()> {
-    let mut cmd = std::process::Command::new(mongosh_path);
-    cmd.arg(&**connection_string)
-        .arg("--username")
-        .arg(username)
+) -> Command {
+    let mut cmd = Command::new(mongosh_path);
+    cmd.arg(&**creds.connection_string)
+        .args(["--username", &creds.username])
         .arg("--password")
-        .arg(&**password)
-        .arg("--authenticationDatabase")
-        .arg("admin");
+        .arg(&**creds.password)
+        .args(["--authenticationDatabase", "admin"])
+        .args(extra_args);
+    cmd
+}
 
-    for arg in extra_args {
-        cmd.arg(arg);
-    }
+#[cfg(unix)]
+fn launch_mongosh(
+    mongosh_path: &Path,
+    creds: &CachedCredentials,
+    extra_args: &[String],
+) -> Result<Infallible> {
+    use std::os::unix::process::CommandExt;
+    let err = build_mongosh_command(mongosh_path, creds, extra_args).exec();
+    Err(anyhow!("Failed to exec mongosh: {err}"))
+}
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        let err = cmd.exec();
-        return Err(anyhow!("Failed to exec mongosh: {err}"));
-    }
-
-    #[cfg(not(unix))]
-    {
-        let status = cmd.status().context("Failed to launch mongosh")?;
-        std::process::exit(status.code().unwrap_or(1));
-    }
+#[cfg(not(unix))]
+fn launch_mongosh(
+    mongosh_path: &Path,
+    creds: &CachedCredentials,
+    extra_args: &[String],
+) -> Result<Infallible> {
+    let status = build_mongosh_command(mongosh_path, creds, extra_args)
+        .status()
+        .context("Failed to launch mongosh")?;
+    std::process::exit(status.code().unwrap_or(1));
 }

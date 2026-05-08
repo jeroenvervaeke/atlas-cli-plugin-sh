@@ -27,6 +27,21 @@ Examples:
   # Forward flags to mongosh
   atlas sh --cluster MyCluster --quiet --norc";
 
+const LOGOUT_LONG_ABOUT: &str = "\
+Remove cached credentials for an Atlas cluster from the OS keychain.
+
+The next `atlas sh` invocation against this cluster will provision a fresh
+temporary database user. Atlas itself revokes the previous user when its TTL
+expires; this command only clears the local cache.";
+
+const LOGOUT_AFTER_LONG_HELP: &str = "\
+Examples:
+  # Forget cached credentials for MyCluster
+  atlas sh logout --cluster MyCluster
+
+  # Same, against a non-default profile
+  atlas sh logout --cluster MyCluster --profile staging";
+
 #[derive(Debug, Parser)]
 #[command(
     version,
@@ -42,13 +57,24 @@ pub(crate) struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum PluginSubCommands {
-    /// [preview] Launch mongosh against an Atlas cluster
-    #[command(long_about = SH_LONG_ABOUT, after_long_help = SH_AFTER_LONG_HELP)]
+    #[command(
+        about = "[preview] Launch mongosh against an Atlas cluster",
+        long_about = SH_LONG_ABOUT,
+        after_long_help = SH_AFTER_LONG_HELP,
+    )]
     Sh(ShArgs),
+
+    #[command(
+        about = "[preview] Remove cached credentials for a cluster from the OS keychain",
+        long_about = LOGOUT_LONG_ABOUT,
+        after_long_help = LOGOUT_AFTER_LONG_HELP,
+    )]
+    Logout(LogoutArgs),
 }
 
+/// Connection-targeting arguments shared by every subcommand.
 #[derive(Debug, Args)]
-pub(crate) struct ShArgs {
+pub(crate) struct ConnectionArgs {
     /// Atlas cluster name (required)
     #[arg(
         long,
@@ -86,6 +112,12 @@ pub(crate) struct ShArgs {
                      Alias: --projectId (matches mongodb-atlas-cli)."
     )]
     pub(crate) project_id: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ShArgs {
+    #[command(flatten)]
+    pub(crate) connection: ConnectionArgs,
 
     /// Arguments forwarded to mongosh (e.g. --eval, --quiet, --norc)
     #[arg(
@@ -104,30 +136,48 @@ pub(crate) struct ShArgs {
     pub(crate) mongosh_args: Vec<String>,
 }
 
+#[derive(Debug, Args)]
+pub(crate) struct LogoutArgs {
+    #[command(flatten)]
+    pub(crate) connection: ConnectionArgs,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use clap::Parser;
 
+    fn parse_sh(args: &[&str]) -> ShArgs {
+        match Cli::try_parse_from(args).unwrap().command {
+            PluginSubCommands::Sh(a) => a,
+            PluginSubCommands::Logout(_) => panic!("expected sh subcommand, got logout"),
+        }
+    }
+
+    fn parse_logout(args: &[&str]) -> LogoutArgs {
+        match Cli::try_parse_from(args).unwrap().command {
+            PluginSubCommands::Logout(a) => a,
+            PluginSubCommands::Sh(_) => panic!("expected logout subcommand, got sh"),
+        }
+    }
+
     #[test]
     fn parses_required_cluster_flag() {
-        let cli = Cli::try_parse_from(["atlas", "sh", "--cluster", "my-cluster"]).unwrap();
-        let PluginSubCommands::Sh(args) = cli.command;
-        assert_eq!(args.cluster, "my-cluster");
-        assert_eq!(args.profile, "default");
-        assert!(args.project_id.is_none());
+        let args = parse_sh(&["atlas", "sh", "--cluster", "my-cluster"]);
+        assert_eq!(args.connection.cluster, "my-cluster");
+        assert_eq!(args.connection.profile, "default");
+        assert!(args.connection.project_id.is_none());
         assert!(args.mongosh_args.is_empty());
     }
 
     #[test]
     fn missing_cluster_fails() {
-        let result = Cli::try_parse_from(["atlas", "sh"]);
-        assert!(result.is_err());
+        assert!(Cli::try_parse_from(["atlas", "sh"]).is_err());
     }
 
     #[test]
     fn parses_all_flags() {
-        let cli = Cli::try_parse_from([
+        let args = parse_sh(&[
             "atlas",
             "sh",
             "--cluster",
@@ -138,18 +188,16 @@ mod tests {
             "abc123",
             "--eval",
             "db.stats()",
-        ])
-        .unwrap();
-        let PluginSubCommands::Sh(args) = cli.command;
-        assert_eq!(args.cluster, "prod");
-        assert_eq!(args.profile, "staging");
-        assert_eq!(args.project_id.as_deref(), Some("abc123"));
+        ]);
+        assert_eq!(args.connection.cluster, "prod");
+        assert_eq!(args.connection.profile, "staging");
+        assert_eq!(args.connection.project_id.as_deref(), Some("abc123"));
         assert_eq!(args.mongosh_args, vec!["--eval", "db.stats()"]);
     }
 
     #[test]
     fn accepts_mongodb_atlas_cli_aliases() {
-        let cli = Cli::try_parse_from([
+        let args = parse_sh(&[
             "atlas",
             "sh",
             "--clusterName",
@@ -158,33 +206,48 @@ mod tests {
             "staging",
             "--projectId",
             "abc123",
-        ])
-        .unwrap();
-        let PluginSubCommands::Sh(args) = cli.command;
-        assert_eq!(args.cluster, "prod");
-        assert_eq!(args.profile, "staging");
-        assert_eq!(args.project_id.as_deref(), Some("abc123"));
+        ]);
+        assert_eq!(args.connection.cluster, "prod");
+        assert_eq!(args.connection.profile, "staging");
+        assert_eq!(args.connection.project_id.as_deref(), Some("abc123"));
     }
 
     #[test]
     fn cluster_name_alias_matches_cluster() {
-        let cli = Cli::try_parse_from(["atlas", "sh", "--clusterName", "my-cluster"]).unwrap();
-        let PluginSubCommands::Sh(args) = cli.command;
-        assert_eq!(args.cluster, "my-cluster");
+        let args = parse_sh(&["atlas", "sh", "--clusterName", "my-cluster"]);
+        assert_eq!(args.connection.cluster, "my-cluster");
     }
 
     #[test]
     fn project_id_alias_matches_project_id() {
-        let cli = Cli::try_parse_from(["atlas", "sh", "--cluster", "c", "--projectId", "abc123"])
-            .unwrap();
-        let PluginSubCommands::Sh(args) = cli.command;
-        assert_eq!(args.project_id.as_deref(), Some("abc123"));
+        let args = parse_sh(&["atlas", "sh", "--cluster", "c", "--projectId", "abc123"]);
+        assert_eq!(args.connection.project_id.as_deref(), Some("abc123"));
     }
 
     #[test]
     fn profile_short_form_matches_profile() {
-        let cli = Cli::try_parse_from(["atlas", "sh", "--cluster", "c", "-P", "staging"]).unwrap();
-        let PluginSubCommands::Sh(args) = cli.command;
-        assert_eq!(args.profile, "staging");
+        let args = parse_sh(&["atlas", "sh", "--cluster", "c", "-P", "staging"]);
+        assert_eq!(args.connection.profile, "staging");
+    }
+
+    #[test]
+    fn parses_logout_subcommand() {
+        let args = parse_logout(&["atlas", "logout", "--cluster", "my-cluster"]);
+        assert_eq!(args.connection.cluster, "my-cluster");
+        assert_eq!(args.connection.profile, "default");
+    }
+
+    #[test]
+    fn logout_accepts_aliases() {
+        let args = parse_logout(&[
+            "atlas",
+            "logout",
+            "--clusterName",
+            "prod",
+            "--projectId",
+            "abc123",
+        ]);
+        assert_eq!(args.connection.cluster, "prod");
+        assert_eq!(args.connection.project_id.as_deref(), Some("abc123"));
     }
 }

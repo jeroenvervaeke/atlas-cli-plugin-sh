@@ -1,10 +1,12 @@
 name: atlas-cli-plugin-sh
 description: Connect to an Atlas cluster via mongosh
-version: $VERSION
+version: ${VERSION}
 github:
-  owner: $GITHUB_REPOSITORY_OWNER
-  name: $GITHUB_REPOSITORY_NAME
-binary: $BINARY
+  owner: ${GITHUB_REPOSITORY_OWNER}
+  name: ${GITHUB_REPOSITORY_NAME}
+binary: ${BINARY}
 commands:
   sh:
     description: Launch mongosh connected to an Atlas cluster
+  logout:
+    description: Remove cached credentials for an Atlas cluster

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use keyring::Entry;
 use redacted::{RedactContents, Redacted};
 use serde::{Deserialize, Serialize};
@@ -40,12 +40,17 @@ mod redacted_serde {
 }
 
 impl CachedCredentials {
-    pub(crate) fn new(username: String, password: String, connection_string: String) -> Self {
+    pub(crate) fn new(
+        username: String,
+        password: String,
+        connection_string: String,
+        expires_at: DateTime<Utc>,
+    ) -> Self {
         Self {
             username,
             password: Redacted::new(password),
             connection_string: Redacted::new(connection_string),
-            expires_at: Utc::now() + Duration::hours(TTL_HOURS),
+            expires_at,
         }
     }
 
@@ -81,15 +86,18 @@ pub(crate) fn store(account: &str, creds: &CachedCredentials) -> Result<()> {
     Ok(())
 }
 
-/// Delete cached credentials from the OS keychain (best-effort).
-/// Available for future cleanup tooling (e.g. `atlas sh logout`).
-#[allow(dead_code)]
-pub(crate) fn invalidate(account: &str) -> Result<()> {
+/// Delete cached credentials from the OS keychain.
+///
+/// Returns `Ok(true)` when an entry was removed and `Ok(false)` when nothing
+/// was cached for `account` (idempotent — calling logout twice is not an
+/// error). Returns `Err` for genuine keyring failures.
+pub(crate) fn invalidate(account: &str) -> Result<bool> {
     let entry = Entry::new(KEYRING_SERVICE, account).context("failed to open keyring entry")?;
-    entry
-        .delete_credential()
-        .context("failed to delete keyring entry")?;
-    Ok(())
+    match entry.delete_credential() {
+        Ok(()) => Ok(true),
+        Err(keyring::Error::NoEntry) => Ok(false),
+        Err(e) => Err(anyhow::anyhow!("failed to delete keyring entry: {e}")),
+    }
 }
 
 #[cfg(test)]
@@ -102,6 +110,7 @@ mod tests {
             "atlas-sh-user".to_string(),
             "super-secret".to_string(),
             "mongodb+srv://cluster.abc.mongodb.net".to_string(),
+            Utc::now() + chrono::Duration::hours(TTL_HOURS),
         );
         let json = serde_json::to_string(&creds).unwrap();
 
@@ -125,6 +134,7 @@ mod tests {
             "user".to_string(),
             "topsecret".to_string(),
             "mongodb+srv://x".to_string(),
+            Utc::now() + chrono::Duration::hours(TTL_HOURS),
         );
         let debug = format!("{creds:?}");
         assert!(
@@ -136,15 +146,23 @@ mod tests {
 
     #[test]
     fn is_expired_false_when_fresh() {
-        let creds = CachedCredentials::new("u".to_string(), "p".to_string(), "c".to_string());
+        let creds = CachedCredentials::new(
+            "u".to_string(),
+            "p".to_string(),
+            "c".to_string(),
+            Utc::now() + chrono::Duration::hours(1),
+        );
         assert!(!creds.is_expired());
     }
 
     #[test]
     fn is_expired_true_when_past() {
-        use chrono::Duration;
-        let mut creds = CachedCredentials::new("u".to_string(), "p".to_string(), "c".to_string());
-        creds.expires_at = chrono::Utc::now() - Duration::seconds(1);
+        let creds = CachedCredentials::new(
+            "u".to_string(),
+            "p".to_string(),
+            "c".to_string(),
+            Utc::now() - chrono::Duration::seconds(1),
+        );
         assert!(creds.is_expired());
     }
 }
