@@ -1,0 +1,48 @@
+name: Auto Tag Release
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  auto-tag:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Compare versions and tag if changed
+        run: |
+          CURR_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "atlas-cli-plugin-sh") | .version')
+
+          mkdir -p /tmp/prev-pkg
+          git show HEAD~1:Cargo.toml > /tmp/prev-pkg/Cargo.toml
+          PREV_VERSION=$(cargo metadata --no-deps --format-version 1 --manifest-path /tmp/prev-pkg/Cargo.toml | jq -r '.packages[] | select(.name == "atlas-cli-plugin-sh") | .version')
+
+          echo "Previous version: $PREV_VERSION"
+          echo "Current version:  $CURR_VERSION"
+
+          if [ "$CURR_VERSION" = "$PREV_VERSION" ]; then
+            echo "Version unchanged, skipping tag."
+            exit 0
+          fi
+
+          TAG="v$CURR_VERSION"
+
+          if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
+            echo "Tag $TAG already exists, skipping."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "Tagged and pushed $TAG"
