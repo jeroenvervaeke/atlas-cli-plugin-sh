@@ -10,7 +10,6 @@
 //! to a sibling type without an explicit conversion.
 
 use std::fmt;
-use std::ops::Deref;
 use std::str::FromStr;
 
 use redacted::{RedactContents, Redacted};
@@ -136,6 +135,10 @@ pub(crate) struct Password(Redacted<String, RedactContents>);
 #[derive(Debug, Clone)]
 pub(crate) struct ConnectionString(Redacted<String, RedactContents>);
 
+// Secrets do *not* implement `Deref<Target = str>` or `Display`. Accessing the
+// inner value requires an explicit `as_str()` call so leaks have a visible
+// surface in code review. `Debug` is provided by `Redacted` and prints
+// `REDACTED` regardless.
 macro_rules! redacted_string_newtype_serde {
     ($name:ident) => {
         impl $name {
@@ -144,14 +147,7 @@ macro_rules! redacted_string_newtype_serde {
             }
 
             pub(crate) fn as_str(&self) -> &str {
-                &*self.0
-            }
-        }
-
-        impl Deref for $name {
-            type Target = str;
-            fn deref(&self) -> &str {
-                &*self.0
+                &self.0
             }
         }
 
@@ -228,7 +224,7 @@ mod tests {
         let json = serde_json::to_string(&cs).unwrap();
         assert_eq!(json, r#""mongodb+srv://x.mongodb.net""#);
         let decoded: ConnectionString = serde_json::from_str(&json).unwrap();
-        assert_eq!(&*decoded, "mongodb+srv://x.mongodb.net");
+        assert_eq!(decoded.as_str(), "mongodb+srv://x.mongodb.net");
     }
 
     /// Compile-fence: a `ProjectId` cannot silently be passed where a

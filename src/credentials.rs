@@ -31,14 +31,34 @@ impl CachedCredentials {
         }
     }
 
+    /// Whether the cached credentials should no longer be reused.
+    ///
+    /// Treats the moment of expiry itself as expired (`now >= expires_at`):
+    /// we'd rather re-issue a user one second early than send a soon-to-be
+    /// invalid password to mongosh.
     pub(crate) fn is_expired(&self) -> bool {
-        Utc::now() >= self.expires_at
+        self.is_expired_at(Utc::now())
+    }
+
+    /// Clock-injected variant of [`Self::is_expired`]. Internal so callers
+    /// cannot pass a manipulated `now`; tests use it to exercise the `>=`
+    /// boundary.
+    fn is_expired_at(&self, now: DateTime<Utc>) -> bool {
+        now >= self.expires_at
     }
 }
 
 /// Load cached credentials from the OS keychain.
-/// Returns Ok(None) if no entry exists.
-/// Returns Err if the keyring is unavailable (caller should degrade gracefully).
+///
+/// - `Ok(Some(creds))` when an entry exists and parses cleanly.
+/// - `Ok(None)` when no entry exists for `account` — not an error.
+/// - `Err(_)` when the keyring is unavailable or the cached JSON is corrupt.
+///
+/// All keyring failures (`DBus` down, permission denied, locked keychain, …)
+/// collapse into `anyhow::Error`. This is intentional: the only consumer is
+/// `main`, which degrades gracefully on any error by re-provisioning a user.
+/// If a future caller needs to differentiate causes, this function should be
+/// converted to a typed error via `thiserror`.
 pub(crate) fn load(account: &KeyringAccount) -> Result<Option<CachedCredentials>> {
     let entry =
         Entry::new(KEYRING_SERVICE, account.as_str()).context("failed to open keyring entry")?;
@@ -140,6 +160,22 @@ mod tests {
         let mut creds = fresh_creds();
         creds.expires_at = Utc::now() - chrono::Duration::seconds(1);
         assert!(creds.is_expired());
+    }
+
+    #[test]
+    fn is_expired_at_boundary_is_inclusive() {
+        let mut creds = fresh_creds();
+        let pinned = chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        creds.expires_at = pinned;
+
+        // One nanosecond before: not expired.
+        assert!(!creds.is_expired_at(pinned - chrono::Duration::nanoseconds(1)));
+        // Exactly at expiry: expired (inclusive `>=`).
+        assert!(creds.is_expired_at(pinned));
+        // One nanosecond after: expired.
+        assert!(creds.is_expired_at(pinned + chrono::Duration::nanoseconds(1)));
     }
 
     #[test]
