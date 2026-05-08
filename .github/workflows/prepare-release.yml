@@ -16,9 +16,11 @@ jobs:
   prepare-release:
     runs-on: ubuntu-22.04
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.RELEASE_PAT }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_PAT }}
 
       - uses: dtolnay/rust-toolchain@stable
 

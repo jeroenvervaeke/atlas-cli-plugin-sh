@@ -15,6 +15,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
+          token: ${{ secrets.RELEASE_PAT }}
 
       - name: Compare versions and tag if changed
         run: |
