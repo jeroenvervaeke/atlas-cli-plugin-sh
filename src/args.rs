@@ -52,17 +52,20 @@ pub struct ShArgs {
     /// Atlas cluster name (required)
     #[arg(
         long,
+        visible_alias = "clusterName",
         value_name = "NAME",
         long_help = "Atlas cluster name (required).\n\n\
                      Use the name shown in the Atlas UI or 'atlas clusters list'.\n\
                      The cluster must belong to the project resolved from --project-id\n\
-                     or the active Atlas CLI profile."
+                     or the active Atlas CLI profile.\n\n\
+                     Alias: --clusterName (matches mongodb-atlas-cli)."
     )]
     pub cluster: String,
 
     /// Atlas CLI profile to use
     #[arg(
         long,
+        short = 'P',
         default_value = "default",
         value_name = "NAME",
         long_help = "Atlas CLI profile to use.\n\n\
@@ -75,10 +78,12 @@ pub struct ShArgs {
     /// Atlas project ID (overrides profile default)
     #[arg(
         long,
+        visible_alias = "projectId",
         value_name = "ID",
         long_help = "Atlas project (group) ID containing the cluster.\n\n\
                      Defaults to the project ID configured in the selected Atlas CLI\n\
-                     profile. Persist a default with 'atlas config set project_id <id>'."
+                     profile. Persist a default with 'atlas config set project_id <id>'.\n\n\
+                     Alias: --projectId (matches mongodb-atlas-cli)."
     )]
     pub project_id: Option<String>,
 
@@ -135,5 +140,44 @@ mod tests {
         assert_eq!(args.profile, "staging");
         assert_eq!(args.project_id.as_deref(), Some("abc123"));
         assert_eq!(args.mongosh_args, vec!["--eval", "db.stats()"]);
+    }
+
+    #[test]
+    fn accepts_mongodb_atlas_cli_aliases() {
+        let cli = Cli::try_parse_from([
+            "atlas", "sh",
+            "--clusterName", "prod",
+            "-P", "staging",
+            "--projectId", "abc123",
+        ])
+        .unwrap();
+        let PluginSubCommands::Sh(args) = cli.command;
+        assert_eq!(args.cluster, "prod");
+        assert_eq!(args.profile, "staging");
+        assert_eq!(args.project_id.as_deref(), Some("abc123"));
+    }
+
+    #[test]
+    fn cluster_name_alias_matches_cluster() {
+        let cli = Cli::try_parse_from(["atlas", "sh", "--clusterName", "my-cluster"]).unwrap();
+        let PluginSubCommands::Sh(args) = cli.command;
+        assert_eq!(args.cluster, "my-cluster");
+    }
+
+    #[test]
+    fn project_id_alias_matches_project_id() {
+        let cli = Cli::try_parse_from([
+            "atlas", "sh", "--cluster", "c", "--projectId", "abc123",
+        ])
+        .unwrap();
+        let PluginSubCommands::Sh(args) = cli.command;
+        assert_eq!(args.project_id.as_deref(), Some("abc123"));
+    }
+
+    #[test]
+    fn profile_short_form_matches_profile() {
+        let cli = Cli::try_parse_from(["atlas", "sh", "--cluster", "c", "-P", "staging"]).unwrap();
+        let PluginSubCommands::Sh(args) = cli.command;
+        assert_eq!(args.profile, "staging");
     }
 }
