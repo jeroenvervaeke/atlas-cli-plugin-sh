@@ -30,7 +30,7 @@ Examples:
 #[derive(Parser)]
 #[command(
     version,
-    about = "Launch mongosh against an Atlas cluster [preview]",
+    about = "[preview] Launch mongosh against an Atlas cluster",
     long_about = "Launch mongosh against an Atlas cluster.\n\n\
                   PREVIEW: not production-ready. Expect breaking changes between versions.\n\n\
                   Run 'atlas sh --help' for options and examples."
@@ -42,7 +42,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum PluginSubCommands {
-    /// Launch mongosh against an Atlas cluster [preview]
+    /// [preview] Launch mongosh against an Atlas cluster
     #[command(long_about = SH_LONG_ABOUT, after_long_help = SH_AFTER_LONG_HELP)]
     Sh(ShArgs),
 }
