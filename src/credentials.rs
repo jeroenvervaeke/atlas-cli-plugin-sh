@@ -2,124 +2,38 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use keyring::Entry;
 use redacted::{Redacted, RedactContents};
-use serde::{Deserialize, Serialize, Serializer, Deserializer};
+use serde::{Deserialize, Serialize};
 
 const KEYRING_SERVICE: &str = "atlas-sh";
 pub const TTL_HOURS: i64 = 8;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CachedCredentials {
     pub username: String,
+    #[serde(with = "redacted_serde")]
     pub password: Redacted<String, RedactContents>,
+    #[serde(with = "redacted_serde")]
     pub connection_string: Redacted<String, RedactContents>,
     pub expires_at: DateTime<Utc>,
 }
 
-impl Serialize for CachedCredentials {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("CachedCredentials", 4)?;
-        state.serialize_field("username", &self.username)?;
-        state.serialize_field("password", &**self.password)?;
-        state.serialize_field("connection_string", &**self.connection_string)?;
-        state.serialize_field("expires_at", &self.expires_at)?;
-        state.end()
+// redacted 0.2.0 imports `serde_bytes::Serialize` instead of `serde::Serialize`
+// in its blanket impl, so `Redacted<String, _>` does not satisfy `serde::Serialize`.
+// This module bridges the gap so the parent struct can use `#[derive(Serialize, Deserialize)]`.
+mod redacted_serde {
+    use super::{Redacted, RedactContents};
+
+    pub fn serialize<S: serde::Serializer>(
+        r: &Redacted<String, RedactContents>,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        serde::Serialize::serialize(&**r, s)
     }
-}
 
-impl<'de> Deserialize<'de> for CachedCredentials {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        use serde::de::{self, MapAccess, Visitor};
-        use std::fmt;
-
-        #[derive(Deserialize)]
-        #[serde(field_identifier)]
-        enum Field {
-            #[serde(rename = "username")]
-            Username,
-            #[serde(rename = "password")]
-            Password,
-            #[serde(rename = "connection_string")]
-            ConnectionString,
-            #[serde(rename = "expires_at")]
-            ExpiresAt,
-        }
-
-        struct CachedCredentialsVisitor;
-
-        impl<'de> Visitor<'de> for CachedCredentialsVisitor {
-            type Value = CachedCredentials;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("struct CachedCredentials")
-            }
-
-            fn visit_map<V>(self, mut map: V) -> Result<CachedCredentials, V::Error>
-            where
-                V: MapAccess<'de>,
-            {
-                let mut username = None;
-                let mut password = None;
-                let mut connection_string = None;
-                let mut expires_at = None;
-
-                while let Some(key) = map.next_key()? {
-                    match key {
-                        Field::Username => {
-                            if username.is_some() {
-                                return Err(de::Error::duplicate_field("username"));
-                            }
-                            username = Some(map.next_value()?);
-                        }
-                        Field::Password => {
-                            if password.is_some() {
-                                return Err(de::Error::duplicate_field("password"));
-                            }
-                            password = Some(map.next_value()?);
-                        }
-                        Field::ConnectionString => {
-                            if connection_string.is_some() {
-                                return Err(de::Error::duplicate_field("connection_string"));
-                            }
-                            connection_string = Some(map.next_value()?);
-                        }
-                        Field::ExpiresAt => {
-                            if expires_at.is_some() {
-                                return Err(de::Error::duplicate_field("expires_at"));
-                            }
-                            expires_at = Some(map.next_value()?);
-                        }
-                    }
-                }
-
-                let username = username.ok_or_else(|| de::Error::missing_field("username"))?;
-                let password: String =
-                    password.ok_or_else(|| de::Error::missing_field("password"))?;
-                let connection_string: String = connection_string
-                    .ok_or_else(|| de::Error::missing_field("connection_string"))?;
-                let expires_at =
-                    expires_at.ok_or_else(|| de::Error::missing_field("expires_at"))?;
-
-                Ok(CachedCredentials {
-                    username,
-                    password: Redacted::new(password),
-                    connection_string: Redacted::new(connection_string),
-                    expires_at,
-                })
-            }
-        }
-
-        deserializer.deserialize_struct(
-            "CachedCredentials",
-            &["username", "password", "connection_string", "expires_at"],
-            CachedCredentialsVisitor,
-        )
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(
+        d: D,
+    ) -> Result<Redacted<String, RedactContents>, D::Error> {
+        Ok(Redacted::new(<String as serde::Deserialize>::deserialize(d)?))
     }
 }
 
