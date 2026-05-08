@@ -17,6 +17,10 @@ jobs:
           fetch-depth: 2
           token: ${{ secrets.RELEASE_PAT }}
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Compare versions and tag if changed
         run: |
           CURR_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('Cargo.toml','rb'))['package']['version'])")
