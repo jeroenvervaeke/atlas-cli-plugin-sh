@@ -1236,12 +1236,13 @@ dependencies = [
 
 [[package]]
 name = "mongodb-atlas-cli"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "611a6aa298b185c413604dffe4e7737650272ec4ef2c8465ad2d52ffac30d473"
+checksum = "494b8fd0ea65afa8b45d256948f5bd271bf54c96ce7c74c4257bcec825c16551"
 dependencies = [
  "base64 0.23.1",
  "bytes",
+ "chrono",
  "config",
  "digest_auth",
  "dirs",
@@ -1268,9 +1269,9 @@ dependencies = [
 
 [[package]]
 name = "mongodb-atlas-cli-macros"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac5fe720e695ec97a4462ef7404b13faccc8c749a107dd4f72bcd4cc20cdbc13"
+checksum = "36d4da8dad611c66da94d6e027f7eb5708e6c0891556efabbf8629df916b1b0c"
 dependencies = [
  "proc-macro2",
  "quote",
